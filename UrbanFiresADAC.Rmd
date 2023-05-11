@@ -1,0 +1,190 @@
+---
+title: "UrbanFires"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE,comment = " ",message = FALSE)
+# setwd("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados")
+
+library(ggplot2)
+library(dplyr)
+library(maps)
+library(dbscan)
+library(factoextra)
+library(RgoogleMaps)
+library(maps) #mapas simples, eixos, escala, cidades 
+library(mapdata) #base de dados WorldHires e rios
+library(rworldmap) #outra base de dados de mapas do mundo
+library(maptools) #Ler ESRI shapefiles 
+library(mapproj) #Projeções e grids
+library(ggmap) #Gmaps, OSM + mapas baseados em ggplot2
+library(rgdal)
+library(viridis)
+library(RColorBrewer)
+library(tidygeocoder)
+library(dplyr)
+library(tidygeocoder)
+library(raster)
+library(tmap)
+library(rgeos)
+library(here)
+```
+
+
+```{r shapefiles,include=FALSE}
+# Carregando shapefiles
+district=shapefile("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados/shapefiles/distr/distritos.shp")
+district$ID_0 <- as.factor(iconv(as.character(district$ID_0), "latin1", "UTF-8")) 
+district$ISO <- as.factor(iconv(as.character(district$ISO), "latin1", "UTF-8")) 
+district$NAME_0 <- as.factor(iconv(as.character(district$NAME_0), "latin1", "UTF-8")) 
+district$ID_1 <- as.factor(iconv(as.character(district$ID_1), "latin1", "UTF-8")) 
+district$NAME_1 <- as.factor(iconv(as.character(district$NAME_1), "latin1", "UTF-8")) 
+district$HASC_1 <- as.factor(iconv(as.character(district$HASC_1), "latin1", "UTF-8")) 
+district$CCN_1<- as.factor(iconv(as.character(district$CCN_1), "latin1", "UTF-8")) 
+district$CCA_1 <- as.factor(iconv(as.character(district$CCA_1), "latin1", "UTF-8")) 
+district$TYPE_1 <- as.factor(iconv(as.character(district$TYPE_1), "latin1", "UTF-8")) 
+district$ENGTYPE_1 <- as.factor(iconv(as.character(district$ENGTYPE_1), "latin1", "UTF-8")) 
+district$NL_NAME_1 <- as.factor(iconv(as.character(district$NL_NAME_1), "latin1", "UTF-8")) 
+district$VARNAME_1 <- as.factor(iconv(as.character(district$VARNAME_1), "latin1", "UTF-8")) 
+summary(district)
+pdist0=district[district$ID_1!=3,]
+pdist=pdist0[pdist0$NAME_1!="Madeira",]
+
+
+conc=shapefile("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados/shapefiles/conc/concelhos.shp")
+conc$ID_0 <- as.factor(iconv(as.character(conc$ID_0), "latin1", "UTF-8")) 
+conc$ISO <- as.factor(iconv(as.character(conc$ISO), "latin1", "UTF-8")) 
+conc$NAME_0 <- as.factor(iconv(as.character(conc$NAME_0), "latin1", "UTF-8")) 
+conc$NAME_1 <- as.factor(iconv(as.character(conc$NAME_1), "latin1", "UTF-8")) 
+conc$ID_2 <- as.factor(iconv(as.character(conc$ID_2), "latin1", "UTF-8")) 
+conc$NAME_2 <- as.factor(iconv(as.character(conc$NAME_2), "latin1", "UTF-8")) 
+conc$HASC_2 <- as.factor(iconv(as.character(conc$HASC_2), "latin1", "UTF-8")) 
+conc$CCN_2 <- as.factor(iconv(as.character(conc$CCN_2), "latin1", "UTF-8")) 
+conc$CCA_2 <- as.factor(iconv(as.character(conc$CCA_2), "latin1", "UTF-8")) 
+conc$TYPE_2 <- as.factor(iconv(as.character(conc$TYPE_2), "latin1", "UTF-8")) 
+conc$ENGTYPE_2 <- as.factor(iconv(as.character(conc$ENGTYPE_2), "latin1", "UTF-8")) 
+conc$NL_NAME_2 <- as.factor(iconv(as.character(conc$NL_NAME_2), "latin1", "UTF-8")) 
+conc$VARNAME_2 <- as.factor(iconv(as.character(conc$VARNAME_2), "latin1", "UTF-8"))
+pconc0=conc[conc$NAME_1!="Azores",]
+pconc=pconc0[pconc0$NAME_1!="Madeira",]
+
+# plot(pconc,
+#     axes="TRUE",
+#     main="Mapa de Portugal",
+#     border=gray(0.5),
+#     lwd=.5)
+# 
+
+# Mapa de distritos
+# tmap_options(check.and.fix = TRUE)
+# tmap_mode("plot")
+# tm_shape(pdist)+tm_borders() 
+# 
+
+
+build=shapefile("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados/shapefiles/buildings/buildings.shp")
+
+build$osm_id <- as.factor(iconv(as.character(build$osm_id), "latin1", "UTF-8")) 
+build$name <- as.factor(iconv(as.character(build$name), "latin1", "UTF-8")) 
+build$type <- as.factor(iconv(as.character(build$type), "latin1", "UTF-8")) 
+
+
+```
+
+```{r,functions}
+geo.dist = function(df) {
+  require(geosphere)
+  d <- function(i,z){         # z[1:2] contain long, lat
+    dist <- rep(0,nrow(z))
+    dist[i:nrow(z)] <- distHaversine(z[i:nrow(z),1:2],z[i,1:2])
+    return(dist)
+  }
+  dm <- do.call(cbind,lapply(1:nrow(df),d,df))
+  return(as.dist(dm))
+}
+
+```
+
+# Data by event
+
+
+```{r,include=FALSE}
+data=readxl::read_xlsx("BD.xlsx",sheet = 1)
+data$Distrito=factor(data$Distrito)
+data$Concelho=factor(data$Concelho)
+data$Freguesia=factor(data$Freguesia)
+data$CorpoBombeiros=factor(data$CorpoBombeiros)
+summary(data)
+
+
+tab=aggregate(data$CorpoBombeiros,list(data$Concelho),function(x) length(unique(x)))
+
+
+```
+
+
+
+```{r,fig.width=10,fig.height=5}
+par(mfrow=c(1,5),mar=c(0,0,2,0))
+for (i in unique(data$Ano)) {
+maps::map("world","Portugal")
+maps::map.axes()
+maps::map.scale(ratio=F, cex=0.7)
+abline(h=0, lty = 2)
+points(data$Longitude[data$Ano==i],data$Latitude[data$Ano==i],col=2,pch=16,cex=0.01)
+title(paste(i))
+}
+```
+
+
+```{r,fig.width=5,fig.height=10}
+
+maps::map("world","Portugal")
+maps::map.axes()
+maps::map.scale(ratio=F, cex=0.7)
+abline(h=0, lty = 2)
+points(data$Longitude,data$Latitude,col=2,pch=16,cex=0.01)
+title("2012-2016")
+
+
+
+
+```
+
+
+```{r}
+data %>% 
+  count(Distrito, sort = TRUE) %>% 
+  arrange(desc(n)) 
+```
+
+```{r}
+map_bounds <- c(left = -10, bottom = 36.8, right = -5.5, top = 42.5)
+coords.map <- ggmap::get_stamenmap(map_bounds, zoom = 7, maptype = "toner-lite")
+coords.map <- ggmap(coords.map, extent="device", legend="none")
+
+coords.map+geom_point(data=data,  aes(x=Longitude, y=Latitude), cex=0.3)+ 
+  geom_density2d(data = data, aes(x = Longitude, y = Latitude))+
+  stat_density2d(data=data,  aes(x=Longitude, y=Latitude, fill=..level..), geom="polygon")+
+  scale_fill_gradientn(colours=rev(brewer.pal(7, "Spectral")))+ facet_wrap(vars(Ano),nrow = 1)
+
+#Mapa de distritos com eventos
+# plot(data$Longitude,data$Latitude,col=data$Distrito,pch=16,cex=0.5)
+# lines(pdist,lwd=1)
+# legend("topleft",legend = unique(data$Distrito),col=1:18,pch=16)
+# 
+
+```
+
+
+
+
+
+
+
+
+
+
