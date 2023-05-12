@@ -275,7 +275,7 @@ df.region <- split(dist,dist$NAME_1)
 ```
 
 
-# Analysis by district: Aveiro, Portugal
+# Application: Aveiro, Portugal
 
 ## Prepare data
 
@@ -421,12 +421,15 @@ proj4string(v) <- proj4string(df.region$Aveiro)
 final <- gIntersection(df.region$Aveiro, v, byid=TRUE)
 ```
 
-The code below defines the new service areas by tesselation.
+
+The code below the events to the new FS locations according to the new service areas by tesselation.
 
 ```{r}
-tesselation <- deldir(coordOPT$lon,coordOPT$lat)
-tiles <- tile.list(tesselation)
-df$tile <- wdmin
+d1<-pointDistance(df,coordOPT,lonlat=FALSE) 
+dm1 <- as.matrix(d1)
+dmin1 <- apply(dm1, 1, min, na.rm=TRUE)
+wdmin1 <- apply(dm1, 1, which.min)
+df$tile <- wdmin1
 centers <- data.frame(longOPT=coordOPT[,1],latOPT=coordOPT[,2],tile=1:nrow(coordOPT))
 alloc <- merge(df,centers,by="tile")
 ```
