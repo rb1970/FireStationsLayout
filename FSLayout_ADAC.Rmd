@@ -85,8 +85,8 @@ cat(paste("#",capture.output(sessionInfo()), "\n", collapse =""))
 ## Shapefiles
 
 ```{r read shapefiles,include=FALSE,results='hide'}
-
-dist<-shapefile("shapefiles/dist/distritos.shp")
+unzip("shapefiles/dist/distritos.zip")
+dist<-shapefile("distritos.shp")
 dist$ID_0 <- as.factor(iconv(as.character(dist$ID_0), "UTF-8"))
 dist$ISO <- as.factor(iconv(as.character(dist$ISO), "UTF-8"))
 dist$NAME_0 <- as.factor(iconv(as.character(dist$NAME_0), "UTF-8"))
@@ -103,8 +103,8 @@ dist<-dist[dist$NAME_1!="Madeira",]
 dist<-dist[dist$NAME_1!="Açores",]
 dist$NAME_1<-factor(str_to_title(dist$NAME_1))
 
-
-freg<-sf::read_sf("shapefiles/freg/freguesias.shp")
+unzip("shapefiles/freg/freguesias.zip")
+freg<-sf::read_sf("freguesias.shp")
 freg$Freguesia<-freg$Freguesia %>%
 str_remove(pattern = "União das freguesias de ") %>%
 str_remove(pattern = "União das freguesias da ") %>%
