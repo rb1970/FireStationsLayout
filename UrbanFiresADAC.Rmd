@@ -1,190 +1,544 @@
 ---
-title: "UrbanFires"
+title: "Fire Stations Layout"
 output:
-  html_document: default
-  pdf_document: default
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true 
+    theme: united
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
 ---
 
+
+\newpage
+
+# Welcome
+
+__Where there is smoke, there is fire__  
+
+This is an R notebook written to support the paper _Bispo et al. (2023)  Using spatial point process models, clustering and space partitioning to reconfigure fire stations layout_. The main goal is to present the source code behind the study. 
+
+This work is funded by national funds through the FCT - Fundação para a Ciência e a Tecnologia, I.P., under the scope of the project DSAIPA/DS/0088/2019 and research and development units UNIDEMI (project UIDB/00667/2020) and NOVAMATH (projects UIDB/00297/2020 and UIDP/00297/2020).
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE,warning = FALSE,comment = " ",message = FALSE)
-# setwd("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados")
+knitr::opts_chunk$set(
+  tidy = TRUE,
+	eval = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	comment = " ",
+	include = TRUE
+)
+
 
 library(ggplot2)
-library(dplyr)
 library(maps)
-library(dbscan)
 library(factoextra)
 library(RgoogleMaps)
-library(maps) #mapas simples, eixos, escala, cidades 
-library(mapdata) #base de dados WorldHires e rios
-library(rworldmap) #outra base de dados de mapas do mundo
-library(maptools) #Ler ESRI shapefiles 
-library(mapproj) #Projeções e grids
-library(ggmap) #Gmaps, OSM + mapas baseados em ggplot2
+library(mapdata)
+library(rworldmap)
+library(maptools)
+library(mapproj)
+library(ggmap) 
 library(rgdal)
 library(viridis)
 library(RColorBrewer)
 library(tidygeocoder)
 library(dplyr)
-library(tidygeocoder)
 library(raster)
 library(tmap)
 library(rgeos)
+library(sf)
+library(spatstat)
+library(geosphere)
+library(readxl)
+library(googleway)
+library(deldir)
+library(OpenStreetMap)
 library(here)
+library(rdist)
+library(scapesClassification)
+library(tidyr)
+library(stars)
+library(stringr)
 ```
 
+# Functions 
 
-```{r shapefiles,include=FALSE}
-# Carregando shapefiles
-district=shapefile("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados/shapefiles/distr/distritos.shp")
-district$ID_0 <- as.factor(iconv(as.character(district$ID_0), "latin1", "UTF-8")) 
-district$ISO <- as.factor(iconv(as.character(district$ISO), "latin1", "UTF-8")) 
-district$NAME_0 <- as.factor(iconv(as.character(district$NAME_0), "latin1", "UTF-8")) 
-district$ID_1 <- as.factor(iconv(as.character(district$ID_1), "latin1", "UTF-8")) 
-district$NAME_1 <- as.factor(iconv(as.character(district$NAME_1), "latin1", "UTF-8")) 
-district$HASC_1 <- as.factor(iconv(as.character(district$HASC_1), "latin1", "UTF-8")) 
-district$CCN_1<- as.factor(iconv(as.character(district$CCN_1), "latin1", "UTF-8")) 
-district$CCA_1 <- as.factor(iconv(as.character(district$CCA_1), "latin1", "UTF-8")) 
-district$TYPE_1 <- as.factor(iconv(as.character(district$TYPE_1), "latin1", "UTF-8")) 
-district$ENGTYPE_1 <- as.factor(iconv(as.character(district$ENGTYPE_1), "latin1", "UTF-8")) 
-district$NL_NAME_1 <- as.factor(iconv(as.character(district$NL_NAME_1), "latin1", "UTF-8")) 
-district$VARNAME_1 <- as.factor(iconv(as.character(district$VARNAME_1), "latin1", "UTF-8")) 
-summary(district)
-pdist0=district[district$ID_1!=3,]
-pdist=pdist0[pdist0$NAME_1!="Madeira",]
+This code chunk imports the functions defined in the R script _SourceFunctions.R_:
 
-
-conc=shapefile("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados/shapefiles/conc/concelhos.shp")
-conc$ID_0 <- as.factor(iconv(as.character(conc$ID_0), "latin1", "UTF-8")) 
-conc$ISO <- as.factor(iconv(as.character(conc$ISO), "latin1", "UTF-8")) 
-conc$NAME_0 <- as.factor(iconv(as.character(conc$NAME_0), "latin1", "UTF-8")) 
-conc$NAME_1 <- as.factor(iconv(as.character(conc$NAME_1), "latin1", "UTF-8")) 
-conc$ID_2 <- as.factor(iconv(as.character(conc$ID_2), "latin1", "UTF-8")) 
-conc$NAME_2 <- as.factor(iconv(as.character(conc$NAME_2), "latin1", "UTF-8")) 
-conc$HASC_2 <- as.factor(iconv(as.character(conc$HASC_2), "latin1", "UTF-8")) 
-conc$CCN_2 <- as.factor(iconv(as.character(conc$CCN_2), "latin1", "UTF-8")) 
-conc$CCA_2 <- as.factor(iconv(as.character(conc$CCA_2), "latin1", "UTF-8")) 
-conc$TYPE_2 <- as.factor(iconv(as.character(conc$TYPE_2), "latin1", "UTF-8")) 
-conc$ENGTYPE_2 <- as.factor(iconv(as.character(conc$ENGTYPE_2), "latin1", "UTF-8")) 
-conc$NL_NAME_2 <- as.factor(iconv(as.character(conc$NL_NAME_2), "latin1", "UTF-8")) 
-conc$VARNAME_2 <- as.factor(iconv(as.character(conc$VARNAME_2), "latin1", "UTF-8"))
-pconc0=conc[conc$NAME_1!="Azores",]
-pconc=pconc0[pconc0$NAME_1!="Madeira",]
-
-# plot(pconc,
-#     axes="TRUE",
-#     main="Mapa de Portugal",
-#     border=gray(0.5),
-#     lwd=.5)
-# 
-
-# Mapa de distritos
-# tmap_options(check.and.fix = TRUE)
-# tmap_mode("plot")
-# tm_shape(pdist)+tm_borders() 
-# 
-
-
-build=shapefile("C:/Users/regin/Dropbox/03 INVESTIGAÇÃO/00 Investigação/02 Projetos/01 PROJECTOS FCT/00 Ongoing/Fogos Urbanos RB/AnaliseDados/shapefiles/buildings/buildings.shp")
-
-build$osm_id <- as.factor(iconv(as.character(build$osm_id), "latin1", "UTF-8")) 
-build$name <- as.factor(iconv(as.character(build$name), "latin1", "UTF-8")) 
-build$type <- as.factor(iconv(as.character(build$type), "latin1", "UTF-8")) 
-
-
+```{r source file}
+source("Functions2FSLayout.R")
 ```
 
-```{r,functions}
-geo.dist = function(df) {
-  require(geosphere)
-  d <- function(i,z){         # z[1:2] contain long, lat
-    dist <- rep(0,nrow(z))
-    dist[i:nrow(z)] <- distHaversine(z[i:nrow(z),1:2],z[i,1:2])
-    return(dist)
+Session info:
+
+```{r session info}
+cat(paste("#",capture.output(sessionInfo()), "\n", collapse =""))
+```
+
+# Read files
+
+## Shapefiles
+
+```{r read shapefiles,include=FALSE,results='hide'}
+
+dist<-shapefile("shapefiles/dist/distritos.shp")
+dist$ID_0 <- as.factor(iconv(as.character(dist$ID_0), "UTF-8"))
+dist$ISO <- as.factor(iconv(as.character(dist$ISO), "UTF-8"))
+dist$NAME_0 <- as.factor(iconv(as.character(dist$NAME_0), "UTF-8"))
+dist$ID_1 <- as.factor(iconv(as.character(dist$ID_1), "UTF-8"))
+dist$NAME_1 <- as.factor(iconv(as.character(dist$NAME_1), "UTF-8"))
+dist$HASC_1 <- as.factor(iconv(as.character(dist$HASC_1),  "UTF-8"))
+dist$CCN_1<- as.factor(iconv(as.character(dist$CCN_1),  "UTF-8"))
+dist$CCA_1 <- as.factor(iconv(as.character(dist$CCA_1), "UTF-8"))
+dist$TYPE_1 <- as.factor(iconv(as.character(dist$TYPE_1), "UTF-8"))
+dist$ENGTYPE_1 <- as.factor(iconv(as.character(dist$ENGTYPE_1), "UTF-8"))
+dist$NL_NAME_1 <- as.factor(iconv(as.character(dist$NL_NAME_1), "UTF-8"))
+dist$VARNAME_1 <- as.factor(iconv(as.character(dist$VARNAME_1), "UTF-8"))
+dist<-dist[dist$NAME_1!="Madeira",]
+dist<-dist[dist$NAME_1!="Açores",]
+dist$NAME_1<-factor(str_to_title(dist$NAME_1))
+
+
+freg<-sf::read_sf("shapefiles/freg/freguesias.shp")
+freg$Freguesia<-freg$Freguesia %>%
+str_remove(pattern = "União das freguesias de ") %>%
+str_remove(pattern = "União das freguesias da ") %>%
+str_remove(pattern = "União de freguesias de ") %>%
+str_remove(pattern = "União de freguesias da ") %>%
+str_remove(pattern = "União de freguesias do ") %>%
+str_remove(pattern = "União das freguesias das ") %>%
+str_remove(pattern = "União das freguesias do ")
+```
+
+## Fire Stations Data
+
+This code chunk reads the data files regarding fire stations (FS).
+
+```{r fire stations data}
+FireStations <- read_xlsx("FireStationsData.xlsx")
+```
+
+## Rural Fires Data
+
+This code chunk reads the raw data files regarding rural fires between 2012 and 2020 and combine with information on fire stations.
+
+```{r rural fires data}
+rawfiles_rural<-list.files(pattern = "INFsumaria",recursive = FALSE)
+rural<-list()
+for (i in 1:length(rawfiles_rural)) {
+  rural[[i]]<-read_xls(paste(rawfiles_rural[i]),skip = 6)[,c("Número","Distrito","Concelho","Freguesia","Latitude","Longitude")]
+}
+RuralData<-bind_rows(rural, .id = "column_label")
+RuralData<-na.omit(merge(FireStations,RuralData,by = "Número"))
+```
+
+This code chunk change variables type character to factors.
+
+```{r}
+chr2fac<-colnames(select_if(RuralData, is.character))
+RuralData[,chr2fac] <- lapply(RuralData[,chr2fac],factor)
+```
+
+The next chunk calculates the Euclidean Distances between rural fire events and FS.
+
+```{r}
+for (i in 1:nrow(RuralData)) {
+RuralData$euc_dist[i] <- distm(c(RuralData$Longitude[i],RuralData$Latitude[i]),c(RuralData$LongitudeCB[i],RuralData$LatitudeCB[i]),fun=distHaversine)/1000
+}
+```
+
+The next chunk adds the variable *type of fire* (rural/urban), removes uninformative variables, filters observations with distances under the 0.99 quantile and presents the summary of rural fires data.
+
+```{r}
+RuralData$Tipo<-factor(rep("rural",nrow(RuralData)))
+RuralData$column_label<-NULL
+RuralData$CodigoNatureza<-NULL
+RuralData$EntidadeResponsavel<-NULL
+RuralData = RuralData %>%  filter(RuralData$euc_dist<=quantile(RuralData$euc_dist,0.99))
+RuralData$Distrito<-factor(str_to_title(RuralData$Distrito))
+RuralData$Concelho<-factor(str_to_title(RuralData$Concelho))
+```
+
+There are `r nrow(RuralData)` rural fires.
+
+## Urban Fires Data
+
+```{r urban fires data}
+UrbanData<-read_xlsx("UrbanFires.xlsx")
+```
+
+This code chunk change to factors variables type character.
+
+```{r}
+chr2fac<-colnames(select_if(UrbanData, is.character))
+UrbanData[,chr2fac] <- lapply(UrbanData[,chr2fac],factor)
+```
+
+The next chunk calculates the Euclidean Distances between urban fire events and FS.
+
+```{r}
+for (i in 1:nrow(UrbanData)) {
+UrbanData$euc_dist[i] <- distm(c(UrbanData$Longitude[i],UrbanData$Latitude[i]),c(UrbanData$LongitudeCB[i],UrbanData$LatitudeCB[i]),fun=distHaversine)/1000
+}
+```
+
+The next chunk adds the variable *type of fire* (rural/urban), filters observations with distances above the 0.99 quantile and transform to lowercase letters administrative units names.
+
+```{r}
+UrbanData$Tipo<-factor(rep("urban",nrow(UrbanData)))
+UrbanData <- UrbanData %>%  filter(UrbanData$euc_dist<=quantile(UrbanData$euc_dist,0.99))
+UrbanData <- UrbanData[,c(names(RuralData))]
+UrbanData$Distrito<-factor(str_to_title(UrbanData$Distrito))
+UrbanData$Concelho<-factor(str_to_title(UrbanData$Concelho))
+```
+
+There are `r nrow(UrbanData)` urban fires.
+
+## Population Data
+
+```{r population data}
+pop <- read_xlsx("covars.xlsx")
+mapapop <- merge(freg,pop,by="Freguesia", all.x=T)
+```
+
+# Global Data
+
+```{r global dataset}
+Data <- rbind(RuralData,UrbanData)
+Data$Distrito<-factor(str_to_title(Data$Distrito))
+Data$Concelho<-factor(str_to_title(Data$Concelho))
+Data$Freguesia<-factor(str_to_title(Data$Freguesia))
+```
+
+There are a total of `r nrow(Data)` fires.
+
+## Cleaning
+
+The next chunk limits observations to Portuguese borders.
+
+```{r}
+bound <- dist[dist$NAME_0=="Portugal",]
+spdf <- SpatialPointsDataFrame(coords = Data[, c("Longitude", "Latitude")], data = Data, proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"))
+Data <- Data %>%  filter(!is.na(over(spdf, as(bound, "SpatialPolygons"))))
+```
+
+The next chunks identifies the spatial points with coordinates in- and outside the respective given distric.
+
+```{r}
+namesd<-sort(unique(Data$Distrito))
+listoutd<-list()
+for (i in 1:length(namesd)) {
+listoutd[[i]]=outlimitdist(paste(namesd[i]))
+}
+names(listoutd)<-namesd
+dfs<-Filter(is.data.frame, listoutd)
+df<-bind_rows(dfs)
+rownames(df)<-NULL
+```
+
+The next chunk corrects incorrect district labeling.
+
+```{r}
+for (i in 1:length(dfs)) {
+df=dfs[[i]]
+spdf <- SpatialPointsDataFrame(coords = df[,c("Longitude", "Latitude")], data = df, proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"))
+newloc<-as.character(dist$NAME_1[over(spdf, as(dist, "SpatialPolygons"))])
+Data[Data$Longitude %in% df$Longitude & Data$Latitude %in% df$Latitude,"Distrito"]<-newloc
+}
+clistoutd<-list()
+for (i in 1:length(namesd)) {
+  clistoutd[[i]]=outlimitdist(paste(namesd[i]))
   }
-  dm <- do.call(cbind,lapply(1:nrow(df),d,df))
-  return(as.dist(dm))
+```
+
+Removing not availables entries:
+
+```{r}
+Data <- na.omit(Data)
+```
+
+## Split fire data by district
+
+```{r data by district}
+df.district <- split(Data, Data$Distrito)
+```
+
+## Spatial polygons dataframe by district
+
+```{r spatial polygons}
+df.region <- split(dist,dist$NAME_1)
+```
+
+
+# Analysis by district: Aveiro, Portugal
+
+## Prepare data
+
+-   Set region (window)
+
+The next chunk retrieves the rectangular domain (space) under study.
+
+```{r}
+win <- setregion(df.region$Aveiro)
+```
+
+-   Dataset
+
+The next chunk crops the observations within the area under study.
+
+```{r}
+Aveiro <- dborder(df.district$Aveiro)
+Aveiro$Freguesia <- factor(Aveiro$Freguesia)
+nc <- sum(table(unique(Aveiro$CodCB)))
+```
+
+## Point process by year
+
+```{r}
+df.y <- split(Aveiro, format(Aveiro$DataOcorrencia, "%Y"))
+df <- lapply(df.y, "[", c("Longitude","Latitude"))
+ppp.list <- lapply(df, pppfun, w=win[[1]])
+ppp.list <- lapply(ppp.list, unique)
+```
+
+## Covariate population density
+
+```{r}
+rast<-st_rasterize(mapapop[mapapop$Distrito.x==toupper(names(df.district)[1]),] %>% 
+  dplyr::select(PR, geometry))
+r.pop <-raster(blur(as.im(rast)))
+target<-ppp.list[[1]]
+e <- extent(target$window$xrange[1],target$window$xrange[2],
+            target$window$yrange[1],target$window$yrange[2])
+SP.win <- as(e, "SpatialPolygons")
+extent(r.pop)<-e
+im<-as.im(r.pop)
+poplist=list(pop=im)
+```
+
+The next chunk contains the code that generates the final hyperframe.
+
+```{r}
+H <- hyperframe(points=ppp.list,year=names(ppp.list),image=poplist$pop)
+```
+
+
+## Modelling
+
++ Population as an offset?
+
+```{r,fig.height=4,fig.width=4}
+rhos <- with(H, rhohat(points, image))
+plot(rhos[[1]],main=" ")
+```
+
++ Model
+
+The next chunk adjusts an inhomogeneous Poisson process model with population density as an offset.
+
+```{r}
+model.list <- list(
+fit1=mppm(points ~ x+y+offset(log(image)), H),
+fit2=mppm(points ~ polynom(x,y,2)+offset(log(image)), H),
+fit3=mppm(points ~ polynom(x,y,3)+offset(log(image)), H)
+)
+n.model<-as.numeric(which.min(lapply(model.list, AIC)))
+fit<-model.list[[n.model]]
+together<-subfits.new(fit)
+```
+
+## Simulation
+
+Given the point process model fitted to data, generates random simulations of the model.
+
+```{r}
+set.seed(1)
+nsim <- 50
+rppp.list<- hyperframe(ppp=lapply(together, rmh, verbose=FALSE),iter=1)
+for (j in 2:nsim) {
+rppp<- hyperframe(ppp=lapply(together, rmh, verbose=FALSE),iter=j)
+rppp.list<-rbind(rppp.list,rppp)
 }
-
 ```
 
-# Data by event
+## Clustering
 
-
-```{r,include=FALSE}
-data=readxl::read_xlsx("BD.xlsx",sheet = 1)
-data$Distrito=factor(data$Distrito)
-data$Concelho=factor(data$Concelho)
-data$Freguesia=factor(data$Freguesia)
-data$CorpoBombeiros=factor(data$CorpoBombeiros)
-summary(data)
-
-
-tab=aggregate(data$CorpoBombeiros,list(data$Concelho),function(x) length(unique(x)))
-
-
-```
-
-
-
-```{r,fig.width=10,fig.height=5}
-par(mfrow=c(1,5),mar=c(0,0,2,0))
-for (i in unique(data$Ano)) {
-maps::map("world","Portugal")
-maps::map.axes()
-maps::map.scale(ratio=F, cex=0.7)
-abline(h=0, lty = 2)
-points(data$Longitude[data$Ano==i],data$Latitude[data$Ano==i],col=2,pch=16,cex=0.01)
-title(paste(i))
+```{r}
+df1 <- data.frame(long=rppp.list$ppp[[1]]$x, lat=rppp.list$ppp[[1]]$y)
+set.seed(1)
+km1 <- kmeans(df1,nc)
+df1$clu <- km1$cluster
+loc<-data.frame(km1$centers)
+for (k in 2:length(rppp.list$ppp)) {
+df2 <- data.frame(long=rppp.list$ppp[[k]]$x, lat=rppp.list$ppp[[k]]$y)
+set.seed(1)
+km2<- kmeans(df2,nc)
+df2$clu <- km2$cluster
+loc=cbind(loc, km2$centers[apply(cdist(km1$centers, km2$centers), 1, which.min),])
+}
+locmelt<-data.frame()
+for (i in seq(1,(ncol(loc)-1),2)) {
+   locmelt= rbind(locmelt,loc[,i:(i+1)])
 }
 ```
 
-
-```{r,fig.width=5,fig.height=10}
-
-maps::map("world","Portugal")
-maps::map.axes()
-maps::map.scale(ratio=F, cex=0.7)
-abline(h=0, lty = 2)
-points(data$Longitude,data$Latitude,col=2,pch=16,cex=0.01)
-title("2012-2016")
-
-
-
-
-```
+The next chunk creates a point pattern to represent the locations in the two-dimensional plane and estimates the respective density.
 
 
 ```{r}
-data %>% 
-  count(Distrito, sort = TRUE) %>% 
-  arrange(desc(n)) 
+locppp<-ppp(locmelt$long,locmelt$lat,window=win[[1]])
+bw<-bw.ppl(locppp)
+dens<-density.ppp(locppp,sigma = bw,edge = TRUE,diggle = TRUE)
 ```
+
+The code below finds the local maxima.
+
+```{r,warning=FALSE}
+w <- matrix(1,ncell(nc,d=dens),ncell(nc,d = dens))
+r <- raster(dens)
+localmax <- focal(r, w, fun = function(X) max(X, na.rm=TRUE), pad=FALSE, padValue=NA)
+r2 <- r==localmax
+maxXY <- xyFromCell(r2, Which(r2==1, cells=TRUE))
+```
+
+## Tesselation
+
+```{r,fig.width=4,fig.height=5}
+df <- data.frame(long=Aveiro$Longitude, lat=Aveiro$Latitude)
+coordOPT <- data.frame(lon=maxXY[,1],lat=maxXY[,2])
+coordCB <- data.frame(lon=unique(Aveiro)$LongitudeCB,lat=unique(Aveiro)$LatitudeCB)
+d<-pointDistance(coordCB,coordOPT,lonlat=FALSE) 
+dm <- as.matrix(d)
+dmin <- apply(dm, 1, min, na.rm=TRUE)
+wdmin <- apply(dm, 1, which.min)
+v <- voronoipolygons(coordOPT, df.region$Aveiro)
+proj4string(v) <- proj4string(df.region$Aveiro)
+final <- gIntersection(df.region$Aveiro, v, byid=TRUE)
+```
+
+The code below defines the new service areas by tesselation.
 
 ```{r}
-map_bounds <- c(left = -10, bottom = 36.8, right = -5.5, top = 42.5)
-coords.map <- ggmap::get_stamenmap(map_bounds, zoom = 7, maptype = "toner-lite")
-coords.map <- ggmap(coords.map, extent="device", legend="none")
+tesselation <- deldir(coordOPT$lon,coordOPT$lat)
+tiles <- tile.list(tesselation)
+df$tile <- wdmin
+centers <- data.frame(longOPT=coordOPT[,1],latOPT=coordOPT[,2],tile=1:nrow(coordOPT))
+alloc <- merge(df,centers,by="tile")
+```
 
-coords.map+geom_point(data=data,  aes(x=Longitude, y=Latitude), cex=0.3)+ 
-  geom_density2d(data = data, aes(x = Longitude, y = Latitude))+
-  stat_density2d(data=data,  aes(x=Longitude, y=Latitude, fill=..level..), geom="polygon")+
-  scale_fill_gradientn(colours=rev(brewer.pal(7, "Spectral")))+ facet_wrap(vars(Ano),nrow = 1)
+## Optimal sitting region
 
-#Mapa de distritos com eventos
-# plot(data$Longitude,data$Latitude,col=data$Distrito,pch=16,cex=0.5)
-# lines(pdist,lwd=1)
-# legend("topleft",legend = unique(data$Distrito),col=1:18,pch=16)
-# 
+The code below defines an ellipse corresponding to a (1-alpha)\% confidence region for a bivariate normal distribution with mean _m_ and covariance _S_.
+
+
+```{r}
+alpha <-0.90
+df.temp <- dplyr::filter(locmelt, long > -8.2 & lat > 40.9)
+S <- cov(df.temp)
+m <- colMeans(df.temp)
+el <- ellipse::ellipse(S,centre = m,level=alpha)
+```
+
+## Distances
+
+```{r}
+distTP(reg = df.region$Aveiro,city = Aveiro,max = maxXY)
+```
+
+# Figures paper
+
+```{r Figure 1}
+par(mfrow=c(3,3))
+par(oma=c(0,0,0,0))
+par(mar=c(0,0,1.5,0))
+for (i in 1:9) {
+d<-density.ppp(ppp.list[[i]],sigma = 0.02,edge = TRUE,diggle = TRUE);plot(d,col = heat.colors(100,rev=T),main=paste(names(ppp.list)[i]),cex.main=1.5, ribbon=F,addcontour=F,clipwin=win[[1]],box=F);plot(win[[1]],add=T);points(ppp.list[[i]],cex=0.4,pch=16,col=2)
+    }
+```
+
+
+```{r Figure 2(A)}
+plot(rppp.list$ppp[[1]],main = "(A)",type="n"); points(ppp.list[[1]],cex=0.2,col=2)
+``` 
+
+```{r Figure 2(B)}
+pred=predict.mppm(fit,ngrid = c(500,500))$trend[[1]]
+plot(pred,col=heat.colors(300,rev=T),main="(B)",ribbon=F,box=F)
+``` 
+
+```{r Figure 2(C)}
+plot(df1$long,df1$lat,pch=16,main="(C)",xlab=" ",ylab=" ",asp=0.9,axes=F,cex=0.5,col=terrain.colors(12)[11]);plot(win[[1]],add=T);for(i in 1:nc) {
+    ConvexHull = chull(df1[df1$clu == i, ])
+    polygon(df1[df1$clu == i, ][ConvexHull,],border=1)
+};points(loc[,1],loc[,2],pch=4,cex=0.8,lwd=1.5)
+``` 
+
+```{r Figure 2(D)}
+plot(dens,col = terrain.colors(300,rev=T),addcontour=F,box=F,ribbon=F,main="(D)");points(maxXY,pch=16,cex=0.5,col=1)
+``` 
+
+```{r Figure 2(E)}
+plot(ppp.list[[1]],type="n",main="(E)");points(coordOPT$lon,coordOPT$lat,pch=16,col=1,cex=0.5);plot(final,add=T)
+
+``` 
+
+```{r Figure 2(F)}
+plot(ppp.list[[1]],type="n",main="(F)");points(alloc$long,alloc$lat,type="p",cex=0.2,col=2,add=T);segments(alloc$long,alloc$lat,alloc$longOPT,alloc$latOPT,col=2);points(alloc$longOPT,alloc$latOPT,col=1,cex=0.5,pch=16)
+```
+
+
+```{r Figure 3}
+plot(Aveiro$Longitude,Aveiro$Latitude,col=Aveiro$kmclus,xlab=" ",ylab=" ",cex.axis=1.2, cex.lab=1.2, asp=0.9,type="n")
+lines(dist)
+points(coordCB$lon,coordCB$lat,pch=1,cex=1.5)
+points(coordOPT$lon,coordOPT$lat,pch=16,cex=1.5)
+for (i in 1:nrow(coordCB)) {
+ arrows(x0 = coordCB$lon[i],y0 = coordCB$lat[i],x1 = coordOPT$lon[wdmin[i]],y1 = coordOPT$lat[wdmin[i]],length = 0.1)
+  }
+bearing <- 1:360 * pi/180
+cx <- (maxXY[21,1]+maxXY[16,1]+maxXY[19,1])/3 + 0.08*cos(bearing)
+cy <- (maxXY[21,2]+maxXY[16,2]+maxXY[19,2])/3 + 0.08*sin(bearing)
+circle <- cbind(cx, cy)
+lines(circle, col='red', lwd=2)
+text((maxXY[21,1]+maxXY[16,1]+maxXY[19,1])/3,(maxXY[21,2]+maxXY[16,2]+maxXY[19,2])/3,labels="(C)",cex=0.8,col=2,font=2)
+cx <- maxXY[8,1] + 0.04*cos(bearing)
+cy <- maxXY[8,2] + 0.04*sin(bearing)
+circle <- cbind(cx, cy)
+lines(circle, col='red', lwd=2)
+text(maxXY[8,1] ,maxXY[8,2] ,labels="(B)",cex=0.8,pos=3,offset=0.4,col=2,font=2)
+cx <- maxXY[4,1] + 0.03*cos(bearing)
+cy <- maxXY[4,2] + 0.03*sin(bearing)
+circle <- cbind(cx, cy)
+lines(circle, col='red', lwd=2)
+text(maxXY[4,1] ,maxXY[4,2] ,labels="(A)",cex=0.8,pos=2,offset=1.2,col=2,font=2)
 
 ```
 
 
+The code below depicts the confidence region
 
-
-
-
-
-
-
-
+```{r Figure 4}
+par(mfrow=c(1,2))
+par(oma=c(0,0,0,0))
+par(mar=c(0,0,1,0))
+plot(rppp.list$ppp[[1]], cex = 0.5,main = "(A)",type="n",cex.main=0.6)
+points(df.temp,pch=16,cex=0.4)
+for (i in c(0.90,0.99)) {
+  lines(ellipse::ellipse(S,centre = m,level=i),type="l")
+}
+polygon(el[,1],el[,2], col = "blue",density = 20)
+plot(rppp.list$ppp[[1]], cex = 0.5,main = "(B)",type="n",cex.main=0.6)
+# points(df.temp,pch=16,cex=0.2)
+for (i in c(0.90,0.99)) {
+  lines(ellipse::ellipse(S,centre = m,level=i),type="l")
+}
+polygon(el[,1],el[,2], col = "blue",density = 20)
+points(-8.242602,40.928327,pch=16,col=2)
+points(m[1],m[2],col="blue",pch=16)
+points(maxXY[6,1],maxXY[6,2],col="black",pch=16)
+```
