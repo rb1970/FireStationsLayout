@@ -2,7 +2,7 @@
 
 This readme file was generated on 2023-05-11 by Regina Bispo.
 
-The repository FireStationsLayout contains an RMarkdown file (FSLayout_ADAC.Rmd) written to support the manuscript
+The repository FireStationsLayout contains an RMarkdown file (FSLayout.Rmd) written to support the manuscript
 Bispo et al. (2023) Using spatial point process models, clustering and space partitioning to reconfigure fire stations layout. 
 The goal is to present the source code (.Rmd file) behind the study.
 
